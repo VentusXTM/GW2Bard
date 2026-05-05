@@ -1,0 +1,4 @@
+songs_folder=D:/Desktop/Juegos/juegos/Gw2/GW2songs
+start_delay=0
+language=es
+first_run=true

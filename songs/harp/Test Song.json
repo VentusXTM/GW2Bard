@@ -1,0 +1,7 @@
+{"title": "Test Song", "instrument": "harp", "tempo": 120, "notes": [
+{"octave": 2, "note": 1},
+{"octave": 2, "note": 3},
+{"octave": 2, "note": 5},
+{"octave": 2, "note": 3},
+{"octave": 2, "note": 1}
+]}
