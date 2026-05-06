@@ -6,6 +6,10 @@ import threading
 from customtkinter import *
 from tkinter import Listbox
 
+# Settings location - use APPDATA for portability
+SETTINGS_FOLDER = os.path.join(os.environ.get('APPDATA', os.path.dirname(__file__)), "GW2Bard")
+SETTINGS_FILE = os.path.join(SETTINGS_FOLDER, "settings.txt")
+
 DEFAULT_SONGS_FOLDER = os.path.join(os.path.dirname(__file__), "songs")
 INSTRUMENTS = ["harp", "lute", "flute", "horn", "bell", "bass", "drum", "minstrel"]
 
@@ -45,6 +49,12 @@ TRANSLATIONS = {
         "welcome": "Welcome to GW2Bard!",
         "welcome_desc": "Select your language and songs folder to get started.",
         "select_folder": "Please select your songs folder",
+        "autohotkey_check": "AutoHotkey Required",
+        "autohotkey_found": "Found: {}",
+        "autohotkey_not_found": "AutoHotkey not found on this system",
+        "autohotkey_path_label": "AutoHotkey path:",
+        "download_ahk": "Download AutoHotkey",
+        "browse_ahk": "Browse...",
     },
     "es": {
         "instrument": "Instrumento:",
@@ -80,6 +90,12 @@ TRANSLATIONS = {
         "welcome": "¡Bienvenido a GW2Bard!",
         "welcome_desc": "Selecciona tu idioma y carpeta de canciones para comenzar.",
         "select_folder": "Por favor ubica tu carpeta de canciones",
+        "autohotkey_check": "AutoHotkey Requerido",
+        "autohotkey_found": "Encontrado: {}",
+        "autohotkey_not_found": "AutoHotkey no encontrado en este sistema",
+        "autohotkey_path_label": "Ruta de AutoHotkey:",
+        "download_ahk": "Descargar AutoHotkey",
+        "browse_ahk": "Examinar...",
     }
 }
 
@@ -90,8 +106,9 @@ class GW2Bard(CTk):
     def __init__(self):
         super().__init__()
         self.title("GW2Bard")
-        self.geometry("600x400")
+        self.geometry("750x480")
         self.resizable(False, False)
+        self.minsize(750, 480)
         
         self.current_process = None
         self.is_playing = False
@@ -101,6 +118,9 @@ class GW2Bard(CTk):
         self.first_run = True
         self.songs_data = []
         self.selected_path = ""
+        self.ahk_path = ""
+        self.ahk_path_v2 = ""
+        self.ahk_path_v1 = ""
         
         self.load_settings()
         
@@ -113,46 +133,118 @@ class GW2Bard(CTk):
             self.load_songs()
     
     def show_wizard(self):
-        self.wizard_frame = CTkFrame(self, width=580, height=380)
+        self.wizard_frame = CTkFrame(self, width=730, height=450)
         self.wizard_frame.place(x=10, y=10)
         
-        CTkLabel(self.wizard_frame, text=self.t("welcome"), font=("Arial", 18, "bold")).place(x=290, y=30, anchor="center")
-        CTkLabel(self.wizard_frame, text=self.t("welcome_desc"), font=("Arial", 11), text_color="gray").place(x=290, y=70, anchor="center")
+        CTkLabel(self.wizard_frame, text=self.t("welcome"), font=("Arial", 18, "bold")).place(x=365, y=20, anchor="center")
+        CTkLabel(self.wizard_frame, text=self.t("welcome_desc"), font=("Arial", 11), text_color="gray").place(x=365, y=55, anchor="center")
         
-        CTkLabel(self.wizard_frame, text=self.t("language")).place(x=50, y=120)
+        # Language
+        CTkLabel(self.wizard_frame, text=self.t("language")).place(x=50, y=90)
         self.wizard_lang_var = StringVar(value="English")
         self.wizard_lang_dropdown = CTkOptionMenu(self.wizard_frame, values=["English", "Spanish"], variable=self.wizard_lang_var, command=self.on_wizard_lang_change, width=120)
-        self.wizard_lang_dropdown.place(x=50, y=145)
+        self.wizard_lang_dropdown.place(x=50, y=115)
         
-        CTkLabel(self.wizard_frame, text=self.t("songs_folder")).place(x=50, y=190)
-        self.wizard_folder_entry = CTkEntry(self.wizard_frame, width=400)
+        # Songs folder
+        CTkLabel(self.wizard_frame, text=self.t("songs_folder")).place(x=50, y=155)
+        self.wizard_folder_entry = CTkEntry(self.wizard_frame, width=480)
         self.wizard_folder_entry.insert(0, self.t("select_folder"))
-        self.wizard_folder_entry.place(x=50, y=215)
-        CTkButton(self.wizard_frame, text=self.t("browse"), command=self.wizard_browse_folder, width=70).place(x=460, y=213)
+        self.wizard_folder_entry.place(x=50, y=180)
+        CTkButton(self.wizard_frame, text=self.t("browse"), command=self.wizard_browse_folder, width=80).place(x=540, y=178)
         
-        CTkButton(self.wizard_frame, text=self.t("save_settings"), command=self.finish_wizard, width=150, height=35, font=("Arial", 12)).place(x=215, y=290)
-    
+        # AutoHotkey v1.1 section (default)
+        CTkLabel(self.wizard_frame, text="AutoHotkey v1.1 (default):", font=("Arial", 12, "bold")).place(x=50, y=225)
+        
+        all_ahk = self.find_all_ahk()
+        v1_path = ""
+        v2_path = ""
+        for path, desc in all_ahk:
+            if "v1" in desc and not v1_path:
+                v1_path = path
+            elif "v2" in desc and not v2_path:
+                v2_path = path
+        
+        self.wizard_ahk1_entry = CTkEntry(self.wizard_frame, width=400)
+        self.wizard_ahk1_entry.insert(0, v1_path)
+        self.wizard_ahk1_entry.place(x=50, y=250)
+        CTkButton(self.wizard_frame, text=self.t("browse_ahk"), command=self.wizard_browse_ahk1, width=80).place(x=460, y=248)
+        
+        # AutoHotkey v2 section (fallback)
+        CTkLabel(self.wizard_frame, text="AutoHotkey v2 (fallback):", font=("Arial", 12, "bold")).place(x=50, y=285)
+        
+        self.wizard_ahk2_entry = CTkEntry(self.wizard_frame, width=400)
+        self.wizard_ahk2_entry.insert(0, v2_path)
+        self.wizard_ahk2_entry.place(x=50, y=310)
+        CTkButton(self.wizard_frame, text=self.t("browse_ahk"), command=self.wizard_browse_ahk2, width=80).place(x=460, y=308)
+        
+        # Download buttons
+        CTkButton(self.wizard_frame, text=self.t("download_ahk"), command=self.download_ahk, width=140).place(x=550, y=248)
+        CTkButton(self.wizard_frame, text=self.t("download_ahk"), command=self.download_ahk_v1, width=140).place(x=550, y=308)
+        
+        CTkButton(self.wizard_frame, text=self.t("save_settings"), command=self.finish_wizard, width=150, height=35, font=("Arial", 12)).place(x=290, y=400)
+
     def on_wizard_lang_change(self, choice):
         self.language = "en" if choice == "English" else "es"
+        # Store current values before rebuilding
+        current_folder = self.wizard_folder_entry.get() if hasattr(self, 'wizard_folder_entry') else ""
+        current_ahk2 = self.wizard_ahk2_entry.get() if hasattr(self, 'wizard_ahk2_entry') else ""
+        current_ahk1 = self.wizard_ahk1_entry.get() if hasattr(self, 'wizard_ahk1_entry') else ""
+        
         # Rebuild wizard UI
         for widget in self.wizard_frame.winfo_children():
             widget.destroy()
         
-        CTkLabel(self.wizard_frame, text=self.t("welcome"), font=("Arial", 18, "bold")).place(x=290, y=30, anchor="center")
-        CTkLabel(self.wizard_frame, text=self.t("welcome_desc"), font=("Arial", 11), text_color="gray").place(x=290, y=70, anchor="center")
+        CTkLabel(self.wizard_frame, text=self.t("welcome"), font=("Arial", 18, "bold")).place(x=365, y=20, anchor="center")
+        CTkLabel(self.wizard_frame, text=self.t("welcome_desc"), font=("Arial", 11), text_color="gray").place(x=365, y=55, anchor="center")
         
-        CTkLabel(self.wizard_frame, text=self.t("language")).place(x=50, y=120)
+        # Language
+        CTkLabel(self.wizard_frame, text=self.t("language")).place(x=50, y=90)
         self.wizard_lang_var = StringVar(value=choice)
         self.wizard_lang_dropdown = CTkOptionMenu(self.wizard_frame, values=["English", "Spanish"], variable=self.wizard_lang_var, command=self.on_wizard_lang_change, width=120)
-        self.wizard_lang_dropdown.place(x=50, y=145)
+        self.wizard_lang_dropdown.place(x=50, y=115)
         
-        CTkLabel(self.wizard_frame, text=self.t("songs_folder")).place(x=50, y=190)
-        self.wizard_folder_entry = CTkEntry(self.wizard_frame, width=400)
-        self.wizard_folder_entry.insert(0, self.t("select_folder"))
-        self.wizard_folder_entry.place(x=50, y=215)
-        CTkButton(self.wizard_frame, text=self.t("browse"), command=self.wizard_browse_folder, width=70).place(x=460, y=213)
+        # Songs folder
+        CTkLabel(self.wizard_frame, text=self.t("songs_folder")).place(x=50, y=155)
+        self.wizard_folder_entry = CTkEntry(self.wizard_frame, width=480)
+        self.wizard_folder_entry.insert(0, current_folder if current_folder else self.t("select_folder"))
+        self.wizard_folder_entry.place(x=50, y=180)
+        CTkButton(self.wizard_frame, text=self.t("browse"), command=self.wizard_browse_folder, width=80).place(x=540, y=178)
         
-        CTkButton(self.wizard_frame, text=self.t("save_settings"), command=self.finish_wizard, width=150, height=35, font=("Arial", 12)).place(x=215, y=290)
+        # AutoHotkey v1.1 section (default)
+        CTkLabel(self.wizard_frame, text="AutoHotkey v1.1 (default):", font=("Arial", 12, "bold")).place(x=50, y=225)
+        
+        all_ahk = self.find_all_ahk()
+        v1_path = current_ahk1
+        v2_path = current_ahk2
+        
+        if not v1_path:
+            for path, desc in all_ahk:
+                if "v1" in desc and not v1_path:
+                    v1_path = path
+        
+        self.wizard_ahk1_entry = CTkEntry(self.wizard_frame, width=400)
+        self.wizard_ahk1_entry.insert(0, v1_path)
+        self.wizard_ahk1_entry.place(x=50, y=250)
+        CTkButton(self.wizard_frame, text=self.t("browse_ahk"), command=self.wizard_browse_ahk1, width=80).place(x=460, y=248)
+        
+        # AutoHotkey v2 section (fallback)
+        CTkLabel(self.wizard_frame, text="AutoHotkey v2 (fallback):", font=("Arial", 12, "bold")).place(x=50, y=285)
+        
+        if not v2_path:
+            for path, desc in all_ahk:
+                if "v2" in desc and not v2_path:
+                    v2_path = path
+        
+        self.wizard_ahk2_entry = CTkEntry(self.wizard_frame, width=400)
+        self.wizard_ahk2_entry.insert(0, v2_path)
+        self.wizard_ahk2_entry.place(x=50, y=310)
+        CTkButton(self.wizard_frame, text=self.t("browse_ahk"), command=self.wizard_browse_ahk2, width=80).place(x=460, y=308)
+        
+        # Download buttons
+        CTkButton(self.wizard_frame, text=self.t("download_ahk"), command=self.download_ahk, width=140).place(x=550, y=248)
+        CTkButton(self.wizard_frame, text=self.t("download_ahk"), command=self.download_ahk_v1, width=140).place(x=550, y=308)
+        
+        CTkButton(self.wizard_frame, text=self.t("save_settings"), command=self.finish_wizard, width=150, height=35, font=("Arial", 12)).place(x=290, y=400)
     
     def wizard_browse_folder(self):
         from tkinter import filedialog
@@ -161,8 +253,53 @@ class GW2Bard(CTk):
             self.wizard_folder_entry.delete(0, "end")
             self.wizard_folder_entry.insert(0, folder)
     
+    def wizard_browse_ahk(self):
+        from tkinter import filedialog
+        file = filedialog.askopenfilename(
+            title="Select AutoHotkey executable",
+            filetypes=[("Executable", "*.exe")],
+            initialdir=r"C:\Program Files"
+        )
+        if file:
+            self.wizard_ahk_entry.delete(0, "end")
+            self.wizard_ahk_entry.insert(0, file)
+    
+    def wizard_browse_ahk2(self):
+        from tkinter import filedialog
+        file = filedialog.askopenfilename(
+            title="Select AutoHotkey v2 executable",
+            filetypes=[("Executable", "*.exe")],
+            initialdir=r"C:\Program Files"
+        )
+        if file:
+            self.wizard_ahk2_entry.delete(0, "end")
+            self.wizard_ahk2_entry.insert(0, file)
+    
+    def wizard_browse_ahk1(self):
+        from tkinter import filedialog
+        file = filedialog.askopenfilename(
+            title="Select AutoHotkey v1.1 executable",
+            filetypes=[("Executable", "*.exe")],
+            initialdir=r"C:\Program Files"
+        )
+        if file:
+            self.wizard_ahk1_entry.delete(0, "end")
+            self.wizard_ahk1_entry.insert(0, file)
+    
+    def download_ahk(self):
+        import webbrowser
+        webbrowser.open("https://www.autohotkey.com/download/")
+    
+    def download_ahk_v1(self):
+        import webbrowser
+        webbrowser.open("https://www.autohotkey.com/download/ahk-v1-setup.exe")
+    
     def finish_wizard(self):
         self.songs_folder = self.wizard_folder_entry.get()
+        # Save both v1 and v2 paths - v1 is default, v2 is fallback
+        self.ahk_path_v1 = self.wizard_ahk1_entry.get()
+        self.ahk_path_v2 = self.wizard_ahk2_entry.get()
+        self.ahk_path = self.ahk_path_v1 or self.ahk_path_v2  # Default to v1
         self.first_run = False
         self.save_settings()
         
@@ -176,7 +313,7 @@ class GW2Bard(CTk):
         return TRANSLATIONS[self.language].get(key, key)
 
     def create_widgets(self):
-        self.tabview = CTkTabview(self, width=580, height=380)
+        self.tabview = CTkTabview(self, width=730, height=460)
         self.tabview.place(x=10, y=10)
         
         # Player Tab
@@ -246,14 +383,32 @@ class GW2Bard(CTk):
         CTkButton(self.tab_options, text=self.t("browse"), command=self.browse_folder, width=70).place(x=420, y=153)
         CTkButton(self.tab_options, text=self.t("apply"), command=self.apply_folder, width=70).place(x=500, y=153)
         
-        self.ahk_label = CTkLabel(self.tab_options, text=self.t("autohotkey"))
-        self.ahk_label.place(x=10, y=195)
-        self.ahk_path_entry = CTkEntry(self.tab_options, width=450)
-        self.ahk_path_entry.insert(0, self.find_ahk_path())
-        self.ahk_path_entry.place(x=10, y=220)
+        # AutoHotkey v1.1 (default)
+        self.ahk_label_v1 = CTkLabel(self.tab_options, text="AutoHotkey v1.1 (default):")
+        self.ahk_label_v1.place(x=10, y=195)
+        self.ahk_path_entry_v1 = CTkEntry(self.tab_options, width=350)
+        default_v1 = self.ahk_path_v1 if (hasattr(self, 'ahk_path_v1') and self.ahk_path_v1) else ""
+        if not default_v1:
+            for path, desc in self.find_all_ahk():
+                if "v1" in desc and not default_v1:
+                    default_v1 = path
+        self.ahk_path_entry_v1.insert(0, default_v1)
+        self.ahk_path_entry_v1.place(x=10, y=220)
+        
+        # AutoHotkey v2 (fallback)
+        self.ahk_label_v2 = CTkLabel(self.tab_options, text="AutoHotkey v2 (fallback):")
+        self.ahk_label_v2.place(x=10, y=250)
+        self.ahk_path_entry_v2 = CTkEntry(self.tab_options, width=350)
+        default_v2 = self.ahk_path_v2 if (hasattr(self, 'ahk_path_v2') and self.ahk_path_v2) else ""
+        if not default_v2:
+            for path, desc in self.find_all_ahk():
+                if "v2" in desc and not default_v2:
+                    default_v2 = path
+        self.ahk_path_entry_v2.insert(0, default_v2)
+        self.ahk_path_entry_v2.place(x=10, y=275)
         
         self.save_btn = CTkButton(self.tab_options, text=self.t("save_settings"), command=self.save_settings, width=120, height=30)
-        self.save_btn.place(x=230, y=260)
+        self.save_btn.place(x=230, y=310)
 
     def on_language_change(self, choice):
         self.language = "en" if choice == "English" else "es"
@@ -294,16 +449,77 @@ class GW2Bard(CTk):
         self.load_songs()
 
     def find_ahk_path(self):
-        paths = [r"C:\Program Files\AutoHotkey\AutoHotkey.exe", r"C:\Program Files (x86)\AutoHotkey\AutoHotkey.exe"]
-        for path in paths:
+        # Search for AutoHotkey v1 first (default), then v2 (fallback)
+        # v1.1 is more compatible, v2 has compatibility issues
+        search_paths = [
+            # AutoHotkey v1.1 (default - more compatible)
+            r"C:\Program Files\AutoHotkey\AutoHotkeyU64.exe",
+            r"C:\Program Files\AutoHotkey\AutoHotkeyU32.exe",
+            r"C:\Program Files\AutoHotkey\AutoHotkeyA32.exe",
+            r"C:\Program Files (x86)\AutoHotkey\AutoHotkeyU64.exe",
+            r"C:\Program Files (x86)\AutoHotkey\AutoHotkeyU32.exe",
+            r"C:\Program Files (x86)\AutoHotkey\AutoHotkeyA32.exe",
+            # AutoHotkey v2 (fallback) - including v2 subfolder
+            r"C:\Program Files\AutoHotkey\v2\AutoHotkey64.exe",
+            r"C:\Program Files\AutoHotkey\v2\AutoHotkey32.exe",
+            r"C:\Program Files\AutoHotkey\AutoHotkey.exe",
+            r"C:\Program Files\AutoHotkey\AutoHotkey64.exe",
+            r"C:\Program Files (x86)\AutoHotkey\AutoHotkey64.exe",
+            r"C:\Program Files (x86)\AutoHotkey\AutoHotkey.exe",
+        ]
+        
+        for path in search_paths:
             if os.path.exists(path):
                 return path
+        
+        # Check if user has set a custom path in settings
+        if hasattr(self, 'ahk_path') and self.ahk_path and os.path.exists(self.ahk_path):
+            return self.ahk_path
+        
         return ""
+    
+    def find_all_ahk(self):
+        """Find all AutoHotkey executables (v1 and v2) - v1 listed first"""
+        # v1.1 first (so it becomes default)
+        v1_paths = [
+            (r"C:\Program Files\AutoHotkey\AutoHotkeyU64.exe", "v1.1"),
+            (r"C:\Program Files\AutoHotkey\AutoHotkeyU32.exe", "v1.1"),
+            (r"C:\Program Files\AutoHotkey\AutoHotkeyA32.exe", "v1.1"),
+            (r"C:\Program Files (x86)\AutoHotkey\AutoHotkeyU64.exe", "v1.1"),
+            (r"C:\Program Files (x86)\AutoHotkey\AutoHotkeyU32.exe", "v1.1"),
+            (r"C:\Program Files (x86)\AutoHotkey\AutoHotkeyA32.exe", "v1.1"),
+        ]
+        
+        # v2 second (fallback) - including v2\ subfolder
+        v2_paths = [
+            # v2 subfolder
+            (r"C:\Program Files\AutoHotkey\v2\AutoHotkey64.exe", "v2"),
+            (r"C:\Program Files\AutoHotkey\v2\AutoHotkey32.exe", "v2"),
+            # v2 root (legacy install)
+            (r"C:\Program Files\AutoHotkey\AutoHotkey.exe", "v2"),
+            (r"C:\Program Files\AutoHotkey\AutoHotkey64.exe", "v2"),
+            (r"C:\Program Files (x86)\AutoHotkey\AutoHotkey64.exe", "v2"),
+            (r"C:\Program Files (x86)\AutoHotkey\AutoHotkey.exe", "v2"),
+        ]
+        
+        found = []
+        for path, desc in v1_paths:
+            if os.path.exists(path):
+                found.append((path, desc))
+        
+        for path, desc in v2_paths:
+            if os.path.exists(path):
+                found.append((path, desc))
+        
+        return found
 
     def load_settings(self):
-        settings_file = os.path.join(os.path.dirname(__file__), "settings.txt")
-        if os.path.exists(settings_file):
-            with open(settings_file, 'r') as f:
+        # Ensure settings folder exists
+        if not os.path.exists(SETTINGS_FOLDER):
+            os.makedirs(SETTINGS_FOLDER)
+        
+        if os.path.exists(SETTINGS_FILE):
+            with open(SETTINGS_FILE, 'r') as f:
                 for line in f:
                     if '=' in line:
                         key, value = line.strip().split('=', 1)
@@ -315,14 +531,37 @@ class GW2Bard(CTk):
                             self.language = value
                         elif key == "first_run":
                             self.first_run = value.lower() == "true"
+                        elif key == "ahk_path":
+                            self.ahk_path = value
+                        elif key == "ahk_path_v2":
+                            self.ahk_path_v2 = value
+                        elif key == "ahk_path_v1":
+                            self.ahk_path_v1 = value
 
     def save_settings(self):
-        settings_file = os.path.join(os.path.dirname(__file__), "settings.txt")
-        with open(settings_file, 'w') as f:
+        # Ensure settings folder exists
+        if not os.path.exists(SETTINGS_FOLDER):
+            os.makedirs(SETTINGS_FOLDER)
+        
+        # Update ahk_path from UI if entry exists
+        if hasattr(self, 'ahk_path_entry'):
+            self.ahk_path = self.ahk_path_entry.get()
+        if hasattr(self, 'ahk_path_entry_v2'):
+            self.ahk_path_v2 = self.ahk_path_entry_v2.get()
+        if hasattr(self, 'ahk_path_entry_v1'):
+            self.ahk_path_v1 = self.ahk_path_entry_v1.get()
+        
+        with open(SETTINGS_FILE, 'w') as f:
             f.write(f"songs_folder={self.songs_folder}\n")
             f.write(f"start_delay={self.start_delay}\n")
             f.write(f"language={self.language}\n")
             f.write(f"first_run={str(self.first_run).lower()}\n")
+            if hasattr(self, 'ahk_path') and self.ahk_path:
+                f.write(f"ahk_path={self.ahk_path}\n")
+            if hasattr(self, 'ahk_path_v2') and self.ahk_path_v2:
+                f.write(f"ahk_path_v2={self.ahk_path_v2}\n")
+            if hasattr(self, 'ahk_path_v1') and self.ahk_path_v1:
+                f.write(f"ahk_path_v1={self.ahk_path_v1}\n")
         if hasattr(self, 'status'):
             self.status.configure(text=self.t("settings_saved"))
 
@@ -403,7 +642,11 @@ class GW2Bard(CTk):
         if ext == ".exe":
             self.current_process = subprocess.Popen([self.selected_path])
         else:
-            ahk = self.ahk_path_entry.get()
+            # Try v1.1 first (default), then v2 (fallback)
+            ahk = self.ahk_path_entry_v1.get() if hasattr(self, 'ahk_path_entry_v1') else ""
+            if not (ahk and os.path.exists(ahk)):
+                ahk = self.ahk_path_entry_v2.get() if hasattr(self, 'ahk_path_entry_v2') else ""
+            
             if ahk and os.path.exists(ahk):
                 self.current_process = subprocess.Popen([ahk, self.selected_path])
             else:
