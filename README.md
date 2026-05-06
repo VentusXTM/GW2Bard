@@ -27,6 +27,7 @@ pip install customtkinter
 ### Required for Scripts
 
 - [AutoHotkey](https://www.autohotkey.com/) v2.0+ - Required to run `.ahk` music scripts
+- **Recommended:** AutoHotkey v1.1 (for maximum compatibility with existing scripts)
 
 ## Usage
 
